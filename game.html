@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>배구 토스 게임</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            overflow: hidden;
+            touch-action: none;
+            background: white;
+            font-family: Arial, sans-serif;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            touch-action: none;
+        }
+
+        #score {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+
+        #money {
+            position: absolute;
+            top: 60px;
+            left: 20px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+            z-index: 10;
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 30px;
+            border-radius: 20px;
+            text-align: center;
+            display: none;
+            z-index: 20;
+        }
+
+        #gameOver h2 {
+            margin-bottom: 20px;
+            font-size: 32px;
+        }
+
+        #gameOver button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        #mainMenu {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1;
+        }
+
+        #mainMenu h1 {
+            font-size: 48px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        #mainMenu .subtitle {
+            font-size: 20px;
+            color: #666;
+            margin-bottom: 40px;
+        }
+
+        #mainMenu .high-score {
+            font-size: 24px;
+            color: #333;
+            margin-bottom: 30px;
+        }
+
+        #mainMenu .high-score span {
+            color: #FFD700;
+            font-weight: bold;
+        }
+
+        #mainMenu button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 20px 50px;
+            font-size: 24px;
+            border-radius: 15px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+        }
+
+        #mainMenu button:hover {
+            transform: scale(1.05);
+        }
+
+        #mainMenu button:active {
+            transform: scale(0.95);
+        }
+
+        #handsContainer {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100%;
+            height: 300px;
+            pointer-events: none;
+            z-index: 5;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            gap: 50px;
+        }
+
+        .hand-img {
+            width: 150px;
+            height: auto;
+            transition: all 0.2s ease-out;
+            background: transparent;
+            image-rendering: auto;
+            mix-blend-mode: multiply;
+        }
+
+        .hand-img::-webkit-image-inner-element {
+            background: transparent;
+        }
+
+        .left-hand {
+            transform: scaleX(-1);
+        }
+    </style>
+</head>
+<body>
+    <div id="mainMenu">
+        <h1>🏐 배구 토스 게임 🏐</h1>
+        <p class="subtitle">날아오는 공을 토스하세요!</p>
+        <div class="high-score">
+            💰 최고 기록: <span id="highScoreDisplay">0</span>원
+        </div>
+        <button onclick="startGame()">게임 시작</button>
+    </div>
+
+    <div id="score">점수: 0</div>
+    <div id="money">💰 돈: 0원</div>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="handsContainer">
+        <img class="hand-img left-hand" src="hand.png" alt="left hand">
+        <img class="hand-img right-hand" src="hand.png" alt="right hand">
+    </div>
+
+    <div id="gameOver">
+        <h2>게임 오버!</h2>
+        <p id="finalScore"></p>
+        <p id="finalMoney"></p>
+        <button onclick="restartGame()">다시 시작</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let score = 0;
+        let money = 0;
+        let highScore = 0;
+        let gameRunning = false;
+        let objects = [];
+        let touchStartY = 0;
+        let particles = [];
+        const leftHand = document.querySelector('.left-hand');
+        const rightHand = document.querySelector('.right-hand');
+
+        // 공 이미지 로드
+        const ballImage = new Image();
+        ballImage.src = 'ball.png';
+
+        // 최고 기록 불러오기
+        function loadHighScore() {
+            const saved = parseInt(localStorage.getItem('volleyballHighMoney')) || 0;
+            highScore = saved;
+            document.getElementById('highScoreDisplay').textContent = highScore;
+        }
+
+        // 최고 기록 저장하기
+        function saveHighScore() {
+            if (money > highScore) {
+                highScore = money;
+                localStorage.setItem('volleyballHighMoney', highScore);
+                document.getElementById('highScoreDisplay').textContent = highScore;
+            }
+        }
+
+        // 게임 시작
+        function startGame() {
+            document.getElementById('mainMenu').style.display = 'none';
+            gameRunning = true;
+            score = 0;
+            money = 0;
+            objects = [];
+            updateScore();
+            spawnObject();
+        }
+
+        class FallingObject {
+            constructor(type) {
+                this.type = type;
+                this.x = canvas.width / 2;
+                this.y = canvas.height / 2;
+                this.z = 1000;
+                this.size = type === 'ball' ? 50 : 40;
+                this.baseSize = this.size;
+                this.speed = 8 + Math.random() * 4;
+                this.active = true;
+                this.targetX = Math.random() * canvas.width;
+                this.targetY = canvas.height * 0.7 + Math.random() * 100;
+                this.hitVelocityY = 0;
+                this.hitVelocityX = 0;
+                this.isHit = false;
+                this.rotation = 0;
+                this.rotationSpeed = type === 'ball' ? 0.05 : 0;
+            }
+
+            update() {
+                if (this.isHit) {
+                    this.y += this.hitVelocityY;
+                    this.x += this.hitVelocityX;
+                    this.hitVelocityY -= 0.8;
+                    this.size *= 0.97;
+                    this.rotation += 0.3;
+                    
+                    if (this.y < -100 || this.size < 5) {
+                        this.active = false;
+                    }
+                    return;
+                }
+                
+                this.z -= this.speed;
+                this.rotation += this.rotationSpeed;
+                
+                const scale = Math.max(0.1, 1000 / (this.z + 1000));
+                this.size = this.baseSize * scale * 3;
+                const progress = 1 - (this.z / 1000);
+                this.x = canvas.width / 2 + (this.targetX - canvas.width / 2) * progress;
+                this.y = canvas.height / 2 + (this.targetY - canvas.height / 2) * progress;
+                
+                if (this.z < 0) {
+                    if (this.type === 'ball') {
+                        gameRunning = false;
+                        showGameOver();
+                    }
+                    this.active = false;
+                }
+            }
+
+            draw() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation);
+
+                if (this.type === 'ball') {
+                    // 공 이미지 그리기
+                    ctx.drawImage(ballImage, -this.size / 2, -this.size / 2, this.size, this.size);
+
+                } else {
+                    const fontSize = this.size * 1.2;
+                    ctx.font = `${fontSize}px Arial`;
+                    ctx.fillText('💵', -fontSize/2, fontSize/4);
+                }
+
+                ctx.restore();
+            }
+        }
+
+        function animateHands(direction) {
+            if (direction === 'up') {
+                // 공격 이미지로 변경하고 애니메이션
+                leftHand.src = 'hand_attack.png';
+                rightHand.src = 'hand_attack.png';
+                leftHand.style.transform = 'scaleX(-1) translateY(-50px) rotate(-10deg)';
+                rightHand.style.transform = 'translateY(-50px) rotate(10deg)';
+                setTimeout(() => {
+                    leftHand.style.transform = 'scaleX(-1) translateY(0) rotate(0deg)';
+                    rightHand.style.transform = 'translateY(0) rotate(0deg)';
+                    // 원래 이미지로 복구
+                    setTimeout(() => {
+                        leftHand.src = 'hand.png';
+                        rightHand.src = 'hand.png';
+                    }, 100);
+                }, 300);
+            } else {
+                leftHand.style.transform = 'scaleX(-1) translateY(20px)';
+                rightHand.style.transform = 'translateY(20px)';
+                setTimeout(() => {
+                    leftHand.style.transform = 'scaleX(-1) translateY(0)';
+                    rightHand.style.transform = 'translateY(0)';
+                }, 200);
+            }
+        }
+
+        class Particle {
+            constructor(x, y, type, vx, vy, size, rotation) {
+                this.x = x;
+                this.y = y;
+                this.vx = vx !== undefined ? vx : (Math.random() - 0.5) * 10;
+                this.vy = vy !== undefined ? vy : (Math.random() - 0.5) * 10 - 5;
+                this.life = 1;
+                this.type = type;
+                this.size = size !== undefined ? size : Math.random() * 8 + 4;
+                this.rotation = rotation !== undefined ? rotation : 0;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.3;
+                this.life -= 0.02;
+                if (this.rotation !== undefined) {
+                    this.rotation += 0.1;
+                }
+            }
+
+            draw() {
+                ctx.globalAlpha = this.life;
+                if (this.type === 'ball') {
+                    ctx.fillStyle = '#ADD8E6';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (this.type === 'hit') {
+                    // 타격 파티클 (밝은 노란색 원)
+                    ctx.fillStyle = '#FFD700';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fill();
+                } else if (this.type === 'star') {
+                    // 별 모양 이펙트
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.rotate(this.rotation);
+                    ctx.fillStyle = '#FFF';
+                    ctx.font = `${this.size}px Arial`;
+                    ctx.fillText('⭐', -this.size / 2, this.size / 4);
+                    ctx.restore();
+                } else {
+                    ctx.fillStyle = '#FFD700';
+                    ctx.font = `${this.size * 2}px Arial`;
+                    ctx.fillText('✨', this.x, this.y);
+                }
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        // 충격파 효과 클래스
+        class ShockWave {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.radius = 10;
+                this.maxRadius = 80;
+                this.life = 1;
+            }
+
+            update() {
+                this.radius += 8;
+                this.life -= 0.05;
+            }
+
+            draw() {
+                ctx.globalAlpha = this.life * 0.6;
+                ctx.strokeStyle = '#FFD700';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.strokeStyle = '#FFA500';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius - 10, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        let shockWaves = [];
+
+        function createParticles(x, y, type) {
+            for (let i = 0; i < 15; i++) {
+                particles.push(new Particle(x, y, type));
+            }
+        }
+
+        function createHitEffect(x, y) {
+            // 별 이펙트
+            for (let i = 0; i < 8; i++) {
+                particles.push(new Particle(
+                    x,
+                    y,
+                    'star',
+                    (Math.random() - 0.5) * 15,
+                    (Math.random() - 0.5) * 15,
+                    Math.random() * 20 + 15,
+                    Math.random() * Math.PI * 2
+                ));
+            }
+        }
+
+        function spawnObject() {
+            if (!gameRunning) return;
+            
+            const type = Math.random() < 0.7 ? 'ball' : 'money';
+            objects.push(new FallingObject(type));
+            
+            const delay = 1000 + Math.random() * 1500;
+            setTimeout(spawnObject, delay);
+        }
+
+        function updateScore() {
+            document.getElementById('score').textContent = `점수: ${score}`;
+            document.getElementById('money').textContent = `💰 돈: ${money}원`;
+        }
+
+        function showGameOver() {
+            saveHighScore();
+            document.getElementById('finalScore').textContent = `최종 점수: ${score}점`;
+            document.getElementById('finalMoney').textContent = `획득 금액: ${money}원`;
+            
+            if (money === highScore && money > 0) {
+                document.getElementById('finalMoney').textContent += ' 🎉 신기록!';
+            }
+            
+            document.getElementById('gameOver').style.display = 'block';
+        }
+
+        function restartGame() {
+            document.getElementById('gameOver').style.display = 'none';
+            startGame();
+        }
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            touchStartY = e.touches[0].clientY;
+        });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            const touchEndY = e.changedTouches[0].clientY;
+            const touchX = e.changedTouches[0].clientX;
+            const touchY = e.changedTouches[0].clientY;
+            
+            for (let obj of objects) {
+                if (!obj.active || obj.z > 200) continue;
+                
+                const dist = Math.sqrt(Math.pow(obj.x - touchX, 2) + Math.pow(obj.y - touchY, 2));
+                
+                if (dist < obj.size) {
+                    if (obj.type === 'ball' && touchEndY < touchStartY - 50) {
+                        score += 10;
+                        obj.isHit = true;
+                        obj.hitVelocityY = -20;
+                        obj.hitVelocityX = (touchX - obj.x) * 0.3;
+                        createParticles(obj.x, obj.y, 'ball');
+                        createHitEffect(obj.x, obj.y);
+                        animateHands('up');
+                        updateScore();
+                        break;
+                    } else if (obj.type === 'money' && touchEndY > touchStartY + 50) {
+                        money += 100;
+                        obj.active = false;
+                        createParticles(obj.x, obj.y, 'money');
+                        animateHands('down');
+                        updateScore();
+                        break;
+                    }
+                }
+            }
+        });
+
+        canvas.addEventListener('click', (e) => {
+            const mouseX = e.clientX;
+            const mouseY = e.clientY;
+            
+            for (let obj of objects) {
+                if (!obj.active || obj.z > 200) continue;
+                
+                const dist = Math.sqrt(Math.pow(obj.x - mouseX, 2) + Math.pow(obj.y - mouseY, 2));
+                
+                if (dist < obj.size) {
+                    if (obj.type === 'ball') {
+                        score += 10;
+                        obj.isHit = true;
+                        obj.hitVelocityY = -20;
+                        obj.hitVelocityX = (mouseX - obj.x) * 0.3;
+                        createParticles(obj.x, obj.y, 'ball');
+                        createHitEffect(obj.x, obj.y);
+                        animateHands('up');
+                        updateScore();
+                    } else {
+                        money += 100;
+                        obj.active = false;
+                        createParticles(obj.x, obj.y, 'money');
+                        animateHands('down');
+                        updateScore();
+                    }
+                    break;
+                }
+            }
+        });
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 충격파 업데이트 및 그리기
+            shockWaves = shockWaves.filter(sw => sw.life > 0);
+            for (let sw of shockWaves) {
+                sw.update();
+                sw.draw();
+            }
+
+            particles = particles.filter(p => p.life > 0);
+            for (let p of particles) {
+                p.update();
+                p.draw();
+            }
+
+            objects = objects.filter(obj => obj.active);
+
+            for (let obj of objects) {
+                obj.update();
+                obj.draw();
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        window.addEventListener('resize', () => {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        });
+
+        // 초기화
+        loadHighScore();
+        gameLoop();
+    </script>
+</body>
+</html>
